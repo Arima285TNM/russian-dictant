@@ -1,0 +1,7 @@
+{
+  "name": "Russian Dictation Pro",
+  "description": "A sophisticated Russian language learning application featuring AI-powered dictation, YouTube-based listening exercises, and comprehensive vocabulary flashcards.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
