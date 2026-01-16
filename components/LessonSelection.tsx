@@ -20,6 +20,11 @@ const LessonSelection: React.FC<LessonSelectionProps> = ({
   const [loading, setLoading] = useState(true);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(initialCategoryId);
 
+  // Sync selectedCategoryId when prop changes (essential for "Back" button)
+  useEffect(() => {
+    setSelectedCategoryId(initialCategoryId);
+  }, [initialCategoryId]);
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);

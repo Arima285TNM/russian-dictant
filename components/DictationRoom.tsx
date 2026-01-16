@@ -5,13 +5,18 @@ import { DialogLine } from '../types';
 import { getProgress, saveLessonProgress, markLessonCompleted } from '../utils/progress';
 
 const decodeBase64 = (base64: string) => {
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
+  try {
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+  } catch (e) {
+    console.error("Base64 decode error", e);
+    return new Uint8Array();
   }
-  return bytes;
 };
 
 async function decodeAudioData(
@@ -56,18 +61,30 @@ const DictationRoom: React.FC<DictationRoomProps> = ({ lessonId, onBack }) => {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const isMounted = useRef(true);
 
-  // Focus helper: tìm từ sai đầu tiên hoặc từ trống đầu tiên
-  const focusOnTarget = useCallback((forceFirst: boolean = false) => {
-    if (forceFirst) {
-        setTimeout(() => inputRefs.current[0]?.focus(), 100);
-        return;
-    }
-    const firstIncorrectIndex = isCorrect.findIndex(correct => !correct);
-    const targetIndex = firstIncorrectIndex !== -1 ? firstIncorrectIndex : 0;
+  // Focus helper: tách biệt state isCorrect để tránh re-render loop
+  const performFocus = useCallback((forceFirst: boolean = false) => {
     setTimeout(() => {
+      if (forceFirst) {
+        inputRefs.current[0]?.focus();
+      } else {
+        // Tìm ô đầu tiên chưa đúng
+        const inputs = inputRefs.current;
+        const currentInputsState = [...userInput]; // Lấy giá trị hiện tại
+        const targetWords = lines[currentIndex]?.text.split(/\s+/).filter(w => w.length > 0) || [];
+        
+        let targetIndex = 0;
+        for (let i = 0; i < targetWords.length; i++) {
+          const targetClean = targetWords[i].replace(/[.,!?;:«»""]/g, '').toLowerCase().trim();
+          const typedClean = (currentInputsState[i] || '').replace(/[.,!?;:«»""]/g, '').toLowerCase().trim();
+          if (targetClean !== typedClean) {
+            targetIndex = i;
+            break;
+          }
+        }
         inputRefs.current[targetIndex]?.focus();
+      }
     }, 100);
-  }, [isCorrect]);
+  }, [currentIndex, lines, userInput]);
 
   useEffect(() => {
     isMounted.current = true;
@@ -92,6 +109,12 @@ const DictationRoom: React.FC<DictationRoomProps> = ({ lessonId, onBack }) => {
         setIsPlaying(true);
 
         const decodedBytes = decodeBase64(currentLine.audioData);
+        if (decodedBytes.length === 0) {
+          setIsPlaying(false);
+          isPlayingRef.current = false;
+          return;
+        }
+
         const audioBuffer = await decodeAudioData(decodedBytes, ctx, 24000, 1);
         
         const source = ctx.createBufferSource();
@@ -104,9 +127,9 @@ const DictationRoom: React.FC<DictationRoomProps> = ({ lessonId, onBack }) => {
         source.start(0);
         lastPlayedIndexRef.current = currentIndex;
 
-        // Chỉ tự động focus khi người dùng chủ động bấm nghe lại
+        // Nếu người dùng chủ động ấn nghe lại, nhảy đến ô sai
         if (!isAuto) {
-            focusOnTarget();
+          performFocus(false);
         }
 
     } catch (e) {
@@ -114,7 +137,7 @@ const DictationRoom: React.FC<DictationRoomProps> = ({ lessonId, onBack }) => {
         isPlayingRef.current = false;
         if (isMounted.current) setIsPlaying(false);
     }
-  }, [currentIndex, lines, focusOnTarget]);
+  }, [currentIndex, lines, performFocus]);
 
   const startLesson = () => {
     setNeedsActivation(false);
@@ -123,7 +146,7 @@ const DictationRoom: React.FC<DictationRoomProps> = ({ lessonId, onBack }) => {
     }
     audioContextRef.current.resume().then(() => {
         playAudio(true);
-        focusOnTarget(true); // Nhảy vào ô 1 khi bắt đầu
+        setTimeout(() => inputRefs.current[0]?.focus(), 500);
     });
   };
 
@@ -145,12 +168,14 @@ const DictationRoom: React.FC<DictationRoomProps> = ({ lessonId, onBack }) => {
     loadLesson();
   }, [lessonId]);
 
-  // Khởi tạo trạng thái cho câu mới
+  // Logic khi chuyển câu mới
   useEffect(() => {
     if (loading || lines.length === 0 || needsActivation) return;
 
     const currentLine = lines[currentIndex];
     const words = currentLine.text.split(/\s+/).filter(w => w.length > 0);
+    
+    // Reset inputs cho câu mới
     setUserInput(new Array(words.length).fill(''));
     setIsCorrect(new Array(words.length).fill(false));
     setHasVisited(new Array(words.length).fill(false));
@@ -159,11 +184,11 @@ const DictationRoom: React.FC<DictationRoomProps> = ({ lessonId, onBack }) => {
 
     if (lastPlayedIndexRef.current !== currentIndex) {
         const timer = setTimeout(() => playAudio(true), 600);
-        // Tự động focus ô đầu tiên khi sang câu mới
-        focusOnTarget(true);
+        // Focus ô 1 của câu mới
+        setTimeout(() => inputRefs.current[0]?.focus(), 800);
         return () => clearTimeout(timer);
     }
-  }, [currentIndex, loading, lines, needsActivation, lessonId]);
+  }, [currentIndex, loading, lines, needsActivation, lessonId, playAudio]);
 
   const cleanWord = (w: string) => w.replace(/[.,!?;:«»""]/g, '').toLowerCase().trim();
 
@@ -220,8 +245,8 @@ const DictationRoom: React.FC<DictationRoomProps> = ({ lessonId, onBack }) => {
   );
 
   if (needsActivation) return (
-    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-gray-950 p-6 overflow-hidden">
-        <div className="max-w-md w-full text-center space-y-8 flex flex-col items-center animate-in fade-in zoom-in-95 duration-500">
+    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-gray-950 p-6">
+        <div className="max-w-md w-full text-center space-y-8 flex flex-col items-center">
             <div className="w-20 h-20 bg-indigo-600/20 rounded-full flex items-center justify-center border border-indigo-500/30">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
@@ -229,7 +254,7 @@ const DictationRoom: React.FC<DictationRoomProps> = ({ lessonId, onBack }) => {
             </div>
             <div className="space-y-4">
               <h2 className="text-2xl font-black text-white uppercase tracking-tight">Sẵn sàng học tiếng Nga?</h2>
-              <p className="text-gray-400 text-sm leading-relaxed max-w-xs mx-auto">Click nút bên dưới để bắt đầu. Trình duyệt yêu cầu tương tác để phát âm thanh.</p>
+              <p className="text-gray-400 text-sm leading-relaxed max-w-xs mx-auto text-center">Click nút bên dưới để bắt đầu. Trình duyệt yêu cầu tương tác để có thể phát âm thanh.</p>
             </div>
             <button 
                 onClick={startLesson}
@@ -241,15 +266,15 @@ const DictationRoom: React.FC<DictationRoomProps> = ({ lessonId, onBack }) => {
     </div>
   );
 
-  const currentLine = lines[currentIndex];
-  const targetWords = currentLine ? currentLine.text.split(/\s+/).filter(w => w.length > 0) : [];
+  const currentLineText = lines[currentIndex]?.text || "";
+  const targetWords = currentLineText.split(/\s+/).filter(w => w.length > 0);
 
   return (
     <div className="h-full w-full flex flex-col bg-gray-950 overflow-hidden relative">
       <div className="w-full pt-8 px-8 flex justify-between items-center z-20 shrink-0">
           <div className="flex-1 max-w-xs">
               <div className="h-1 bg-gray-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-indigo-500 transition-all duration-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]" style={{ width: `${((currentIndex + 1) / lines.length) * 100}%` }}></div>
+                  <div className="h-full bg-indigo-500 transition-all duration-300 shadow-[0_0_10px_rgba(99,102,241,0.5)]" style={{ width: `${((currentIndex + 1) / lines.length) * 100}%` }}></div>
               </div>
               <p className="text-[10px] text-gray-600 mt-2 font-black uppercase tracking-[0.25em]">CÂU {currentIndex + 1} / {lines.length}</p>
           </div>
