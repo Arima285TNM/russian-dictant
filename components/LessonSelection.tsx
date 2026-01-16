@@ -1,18 +1,24 @@
 
 import React, { useState, useEffect } from 'react';
 import { getLessonCategories } from '../services/geminiService';
-import { LessonCategory, ProgressData } from '../types';
-import { getProgress } from '../utils/progress';
+import { LessonCategory } from '../types';
+import { getProgress, DetailedProgress } from '../utils/progress';
 
 interface LessonSelectionProps {
   onSelectLesson: (id: string) => void;
+  initialCategoryId?: string | null;
+  onCategoryChange?: (id: string | null) => void;
 }
 
-const LessonSelection: React.FC<LessonSelectionProps> = ({ onSelectLesson }) => {
+const LessonSelection: React.FC<LessonSelectionProps> = ({ 
+  onSelectLesson, 
+  initialCategoryId = null,
+  onCategoryChange 
+}) => {
   const [categories, setCategories] = useState<LessonCategory[]>([]);
-  const [progress, setProgress] = useState<ProgressData>({});
+  const [progress, setProgress] = useState<DetailedProgress>({});
   const [loading, setLoading] = useState(true);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(initialCategoryId);
 
   useEffect(() => {
     const loadData = async () => {
@@ -22,18 +28,23 @@ const LessonSelection: React.FC<LessonSelectionProps> = ({ onSelectLesson }) => 
         getProgress()
       ]);
       setCategories(cats);
-      setProgress(prog);
+      setProgress(prog as any);
       setLoading(false);
     };
     loadData();
   }, []);
+
+  const handleSetCategory = (id: string | null) => {
+    setSelectedCategoryId(id);
+    if (onCategoryChange) onCategoryChange(id);
+  };
 
   const calculateCategoryProgress = (category: LessonCategory) => {
       const totalLessons = category.lessons.filter(l => !l.disabled).length;
       if (totalLessons === 0) return { completed: 0, total: 0, percentage: 0 };
 
       const completedLessons = category.lessons.reduce((count, lesson) => {
-          if (progress[lesson.id] === 100) {
+          if (progress[lesson.id]?.isCompleted) {
               return count + 1;
           }
           return count;
@@ -47,8 +58,9 @@ const LessonSelection: React.FC<LessonSelectionProps> = ({ onSelectLesson }) => 
   };
 
   const renderLessonCard = (lesson: LessonCategory['lessons'][0]) => {
-    const lessonProgress = progress[lesson.id] || 0;
-    const isCompleted = lessonProgress === 100;
+    const lessonData = progress[lesson.id];
+    const lessonProgress = lessonData?.percentage || 0;
+    const isCompleted = lessonData?.isCompleted || false;
 
     return (
       <div 
@@ -61,7 +73,7 @@ const LessonSelection: React.FC<LessonSelectionProps> = ({ onSelectLesson }) => 
         }`}
       >
         <div className="flex-grow">
-          <h4 className="font-bold text-white text-lg mb-2">{lesson.title}</h4>
+          <h4 className="font-bold text-white text-lg mb-2 line-clamp-1">{lesson.title}</h4>
           <p className="text-sm text-gray-400 line-clamp-2 mb-4 h-10">{lesson.description}</p>
         </div>
         
@@ -104,27 +116,27 @@ const LessonSelection: React.FC<LessonSelectionProps> = ({ onSelectLesson }) => 
   const renderCategorySelection = () => (
     <div className="p-10 h-full overflow-y-auto">
       <div className="max-w-7xl mx-auto">
-        <h2 className="text-3xl font-extrabold mb-2 text-white">Bài học hội thoại</h2>
-        <p className="text-gray-400 mb-8">Chọn một nhóm bài học để bắt đầu.</p>
+        <h2 className="text-3xl font-extrabold mb-2 text-white">Luyện nghe hội thoại</h2>
+        <p className="text-gray-400 mb-8">Học qua các tình huống thực tế bằng tiếng Nga.</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12">
             {categories.map((category) => {
                 const categoryProgress = calculateCategoryProgress(category);
                 return (
                     <div
                         key={category.id}
-                        onClick={() => setSelectedCategoryId(category.id)}
+                        onClick={() => handleSetCategory(category.id)}
                         className="p-8 rounded-2xl border bg-gray-800/50 border-gray-700 transition-all group hover:border-indigo-500 hover:bg-gray-800 cursor-pointer flex flex-col justify-between min-h-[220px]"
                     >
                         <div>
                             <h3 className="text-3xl font-bold text-indigo-400 mb-4">{category.title}</h3>
                             <p className="text-gray-400 mb-6">
-                                Gồm {categoryProgress.total} bài hội thoại ngắn để luyện tập.
+                                Gồm {categoryProgress.total} bài luyện tập từ cơ bản đến nâng cao.
                             </p>
                         </div>
                         <div className="mt-auto">
                              <div className="flex justify-between items-center mb-2">
-                                <span className="text-sm font-semibold text-white">Tiến độ</span>
-                                <span className="text-sm font-bold text-indigo-400">{categoryProgress.completed} / {categoryProgress.total}</span>
+                                <span className="text-sm font-semibold text-white">Tổng tiến độ</span>
+                                <span className="text-sm font-bold text-indigo-400">{categoryProgress.completed} / {categoryProgress.total} BÀI</span>
                              </div>
                              <div className="w-full bg-gray-700 rounded-full h-2.5">
                                 <div className="bg-indigo-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${categoryProgress.percentage}%` }}></div>
@@ -146,14 +158,14 @@ const LessonSelection: React.FC<LessonSelectionProps> = ({ onSelectLesson }) => 
       <div className="p-10 h-full overflow-y-auto">
         <div className="max-w-7xl mx-auto">
           <button 
-            onClick={() => setSelectedCategoryId(null)}
+            onClick={() => handleSetCategory(null)}
             className="flex items-center gap-2 text-sm font-semibold text-gray-400 hover:text-white mb-8 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-            Quay lại các nhóm
+            Quay lại danh mục
           </button>
           <h3 className="text-3xl font-extrabold mb-2 text-white">{selectedCategory.title}</h3>
-          <p className="text-gray-400 mb-8">Chọn một bài học để bắt đầu hoặc tiếp tục quá trình luyện tập của bạn.</p>
+          <p className="text-gray-400 mb-8">Chọn bài học để bắt đầu luyện tập chính tả.</p>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {selectedCategory.lessons.map(renderLessonCard)}

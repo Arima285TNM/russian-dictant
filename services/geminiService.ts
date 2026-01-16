@@ -1,120 +1,87 @@
 
-import { GoogleGenAI, Modality, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { Lesson, DialogLine, LessonCategory } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-const audioCache = new Map<string, string>();
-let lessonsDataCache: Record<string, DialogLine[]> | null = null;
+const DATA_URL = "https://raw.githubusercontent.com/Arima285TNM/dialog-text/main/1-40.json";
 
-const getVoiceForSpeaker = (speaker: string): string => {
-  const lowerCaseSpeaker = speaker.toLowerCase().trim();
-  const maleNames = ['ivan', 'pavel', 'barista', 'dmitry', 'alexander', 'sergei', 'maxim', 'artem', 'boris', 'anton', 'victor', 'олег', 'oleg', 'мужчина', 'папа', 'прохожий', 'продавец', 'геннадий', 'алексей', 'пьер', 'василий', 'виктор', 'лев', 'валентин', 'дмитрий', 'артур', 'саша', 'михаил', 'слава', 'кирилл', 'игорь', 'костя', 'антон', 'вадим', 'филипп', 'иван', 'арсен', 'семён', 'егорь', 'руслан', 'тимофей'];
-  if (maleNames.some(name => lowerCaseSpeaker.includes(name))) {
-    return 'Puck'; 
-  }
-  return 'Kore'; 
-};
+const RUSSIAN_TITLES = [
+  "Вопросы", "Семья", "Знакомство", "Делаем уборку", "Идеальная девушка",
+  "Готовим русские блины", "Распродажа", "Резервируем отель", "В ресторане", "В зоопарке",
+  "Спорт", "Я тебя люблю", "В кино", "Мне так стыдно", "В книжном магазине",
+  "Москва", "Как вылечить болезнь?", "Музыка", "Театр", "Изучаем иностранный язык",
+  "Говорим о работе", "Потерялся!", "Говорим о фотоаппарате", "Пишем открытку", "Готовимся к экзамену",
+  "Покупаем одежду", "В аптеке", "В кафе Петербурга", "Нервный пассажир", "Деловой договор",
+  "Путешествуем на поезде", "Александр Пушкин", "Интервью с Кристиной: au pair", "Интервью с бабушкой – КГБ", "Интервью с Алиной – Владивосток",
+  "Поговорим о праздниках", "Северодвинск, северное сияние, белые ночи", "Глаголы движения", "Идём к парикмахеру", "Какая религия лучше?"
+];
 
-export const generateRussianSpeech = async (text: string, speaker: string): Promise<string> => {
-  const cacheKey = `${speaker}:${text}`;
-  if (audioCache.has(cacheKey)) return audioCache.get(cacheKey)!;
+let lessonsDataCache: Record<string, any[]> | null = null;
 
+export const translateText = async (text: string, isRuToVi: boolean): Promise<string> => {
+  if (!text.trim()) return "";
   try {
-    const voice = getVoiceForSpeaker(speaker);
-    const prompt = `Read this Russian text: "${text}"`;
-
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: prompt }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: voice },
-          },
-        },
-        safetySettings: [
-            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        ],
-      },
+      model: "gemini-3-flash-preview",
+      contents: `Bạn là một chuyên gia dịch thuật Nga-Việt. Hãy dịch câu sau từ ${isRuToVi ? "tiếng Nga sang tiếng Việt" : "tiếng Việt sang tiếng Nga"}: "${text}".
+      Yêu cầu: Dịch ngắn gọn, tự nhiên, sát nghĩa nhất. Chỉ trả về kết quả dịch.`,
     });
-    
-    const candidate = response.candidates?.[0];
-    const audioPart = candidate?.content?.parts?.find(part => part.inlineData);
-    
-    if (audioPart && audioPart.inlineData) {
-      const audioData = audioPart.inlineData.data;
-      audioCache.set(cacheKey, audioData);
-      return audioData;
-    }
-    throw new Error(`TTS Failed: ${candidate?.finishReason}`);
+    return response.text?.trim() || "Không thể dịch.";
   } catch (error) {
-    console.error("Speech Generation Error:", error);
-    throw error;
+    console.error("Translation error:", error);
+    return "Lỗi kết nối dịch thuật.";
   }
 };
 
-const loadLessonsFromLocal = async (): Promise<Record<string, DialogLine[]>> => {
+const loadLessonsFromRemote = async (): Promise<Record<string, any[]>> => {
     if (lessonsDataCache) return lessonsDataCache;
     try {
-        const response = await fetch('./data.json');
+        const response = await fetch(DATA_URL);
         if (response.ok) {
             const data = await response.json();
             lessonsDataCache = data;
             return data;
         }
     } catch (e) {
-        console.warn("Could not load data.json locally, checking fallback paths...");
+        console.error("Could not load remote data.json", e);
     }
     return {};
 };
 
 export const getLessonCategories = async (): Promise<LessonCategory[]> => {
-  const createCategoryLessons = (start: number, end: number) => {
-    const lessons = [];
-    for (let i = start; i <= end; i++) {
-        const id = String(i).padStart(3, '0');
-        lessons.push({
-            id: id,
-            title: `Bài ${id}`,
-            description: `Hội thoại tiếng Nga bài số ${i}`,
-            disabled: false, 
-        });
-    }
-    return lessons;
-  };
+  const lessons = [];
+  for (let i = 1; i <= 40; i++) {
+      const id = String(i).padStart(3, '0');
+      lessons.push({
+          id: id,
+          title: `Bài ${id}: ${RUSSIAN_TITLES[i-1]}`,
+          description: `Luyện nghe và viết chính tả: ${RUSSIAN_TITLES[i-1]}`,
+          disabled: false, 
+      });
+  }
 
   return [
     {
       id: "cat-1-40",
-      title: "Thư mục 1-40",
-      lessons: createCategoryLessons(1, 40)
-    },
-    {
-      id: "cat-41-80",
-      title: "Thư mục 41-80",
-      lessons: createCategoryLessons(41, 80)
-    },
+      title: "Hội thoại 1-40",
+      lessons: lessons
+    }
   ];
 };
 
 export const fetchLessonText = async (lessonId: string): Promise<Lesson | null> => {
-    const allData = await loadLessonsFromLocal();
+    const allData = await loadLessonsFromRemote();
     const cleanId = String(lessonId).padStart(3, '0');
     
     if (allData[cleanId]) {
-        return { id: lessonId, lines: allData[cleanId] };
+        const lines: DialogLine[] = allData[cleanId].map((item: any) => ({
+            speaker: item.speaker || "Người nói",
+            text: item.text || "",
+            audioData: item.audioBase64 || "" 
+        }));
+        return { id: lessonId, lines };
     }
 
-    return {
-        id: lessonId,
-        lines: [{ 
-            speaker: "System", 
-            text: `Dữ liệu cho bài ${lessonId} chưa có trong file data.json.` 
-        }]
-    };
+    return null;
 };
