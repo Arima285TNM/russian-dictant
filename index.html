@@ -5,9 +5,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Russian Dictation Master</title>
-    <!-- Polyfill for process.env for Vite production builds -->
+    <!-- Polyfill cho process.env để tránh lỗi crash SDK Gemini khi API_KEY chưa được định nghĩa -->
     <script>
-      window.process = { env: { API_KEY: "" } };
+      window.process = window.process || { env: {} };
+      // Chỉ gán giá trị mặc định nếu chưa có giá trị thực từ môi trường
+      if (!window.process.env.API_KEY) {
+        window.process.env.API_KEY = "";
+      }
     </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,12 +21,12 @@
         body {
             overflow: hidden;
             height: 100vh;
-            background-color: #111827; /* Dark background */
+            background-color: #020617; /* Slate 950 */
             font-family: 'Inter', sans-serif;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
         }
-        /* Custom scrollbar for small overflow areas if any */
+        /* Custom scrollbar */
         ::-webkit-scrollbar {
             width: 6px;
         }
@@ -30,8 +34,11 @@
             background: transparent;
         }
         ::-webkit-scrollbar-thumb {
-            background: #4b5563;
+            background: #1e293b;
             border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #334155;
         }
     </style>
 <script type="importmap">

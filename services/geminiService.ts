@@ -2,7 +2,8 @@
 import { GoogleGenAI } from "@google/genai";
 import { Lesson, DialogLine, LessonCategory } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Sử dụng lazy initialization để tránh crash SDK khi API_KEY chưa sẵn sàng trong module evaluation
+const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
 
 const DATA_URL = "https://raw.githubusercontent.com/Arima285TNM/dialog-text/main/1-40.json";
 
@@ -21,6 +22,7 @@ let lessonsDataCache: Record<string, any[]> | null = null;
 
 export const translateText = async (text: string, isRuToVi: boolean): Promise<string> => {
   if (!text.trim()) return "";
+  const ai = getAI();
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
