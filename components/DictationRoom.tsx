@@ -259,8 +259,8 @@ const DictationRoom: React.FC<DictationRoomProps> = ({ lessonId, onBack }) => {
 
   if (needsActivation) return (
     <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950 p-6 overflow-hidden">
-        <div className="max-w-md w-full text-center space-y-8 flex flex-col items-center animate-in fade-in duration-700">
-            <div className="w-20 h-20 bg-indigo-600/10 rounded-full flex items-center justify-center border border-indigo-500/20">
+        <div className="max-w-md w-full text-center space-y-8 flex flex-col items-center animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="w-20 h-20 bg-indigo-600/10 rounded-full flex items-center justify-center border border-indigo-500/20 shadow-inner">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                 </svg>
@@ -271,7 +271,7 @@ const DictationRoom: React.FC<DictationRoomProps> = ({ lessonId, onBack }) => {
             </div>
             <button 
                 onClick={startLesson}
-                className="w-full max-w-sm bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-500/20 transition-all active:scale-95 text-lg uppercase tracking-widest"
+                className="w-full max-w-sm bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-500/20 transition-[background-color,transform,box-shadow] active:scale-95 text-lg uppercase tracking-widest"
             >
                 {hasStartedBefore ? "Tiếp tục học" : "Bắt đầu bài học"}
             </button>
@@ -301,7 +301,7 @@ const DictationRoom: React.FC<DictationRoomProps> = ({ lessonId, onBack }) => {
             <button 
                 onClick={() => playAudio(false)} 
                 disabled={isPlaying}
-                className={`w-24 h-24 sm:w-32 sm:h-32 bg-slate-900 border-2 rounded-full flex items-center justify-center shadow-2xl transition-all active:scale-95 disabled:opacity-80 mb-10 shrink-0 group relative ${
+                className={`w-24 h-24 sm:w-32 sm:h-32 bg-slate-900 border-2 rounded-full flex items-center justify-center shadow-2xl transition-[border-color,transform,box-shadow] active:scale-95 disabled:opacity-80 mb-10 shrink-0 group relative ${
                     isPlaying ? 'border-indigo-500 ring-4 ring-indigo-500/20' : 'border-slate-800 hover:border-indigo-500'
                 }`}
                 title="Nghe lại và nhảy đến ô chưa đúng"

@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppView } from '../types';
 import { translateText } from '../services/geminiService';
 
@@ -19,23 +19,37 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate }) => {
   const [isRuToVi, setIsRuToVi] = useState(true);
   const [isTranslating, setIsTranslating] = useState(false);
 
-  const handleTranslate = async () => {
-    if (!sourceText.trim()) return;
-    setIsTranslating(true);
-    try {
-      const result = await translateText(sourceText, isRuToVi);
-      setTranslatedText(result);
-    } catch (e) {
-      setTranslatedText("Lỗi dịch.");
-    } finally {
+  // Auto-translate with debounce
+  useEffect(() => {
+    if (!sourceText.trim()) {
+      setTranslatedText("");
       setIsTranslating(false);
+      return;
     }
-  };
+
+    setIsTranslating(true);
+    const delayDebounceFn = setTimeout(async () => {
+      try {
+        const result = await translateText(sourceText, isRuToVi);
+        setTranslatedText(result);
+      } catch (e) {
+        setTranslatedText("Lỗi dịch.");
+      } finally {
+        setIsTranslating(false);
+      }
+    }, 800); // Đợi 800ms sau khi người dùng ngừng gõ mới dịch
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [sourceText, isRuToVi]);
 
   const swapLanguages = () => {
+    const currentTranslated = translatedText;
     setIsRuToVi(!isRuToVi);
-    setSourceText(translatedText);
-    setTranslatedText("");
+    // Khi hoán đổi, chúng ta đưa nội dung đã dịch vào ô nguồn
+    if (currentTranslated && currentTranslated !== "Lỗi dịch.") {
+        setSourceText(currentTranslated);
+        setTranslatedText("");
+    }
   };
 
   const navItems = [
@@ -89,11 +103,14 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate }) => {
         })}
       </nav>
 
-      {/* Dịch thuật AI Section */}
+      {/* Dịch thuật Section */}
       {!isCollapsed && (
         <div className="mt-8 px-4 flex flex-col gap-4 overflow-y-auto flex-1 pb-6 scrollbar-hide">
           <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-gray-500 px-1">
-            <span>Dịch thuật AI</span>
+            <div className="flex items-center gap-2">
+                <span>Dịch thuật</span>
+                {isTranslating && <div className="w-2 h-2 border border-indigo-500/50 border-t-indigo-500 rounded-full animate-spin" />}
+            </div>
             <button 
               onClick={swapLanguages}
               className="text-indigo-500 hover:text-indigo-400 flex items-center gap-1 transition-colors"
@@ -101,7 +118,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate }) => {
               <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
               </svg>
-              HOÁN ĐỔI
+              {isRuToVi ? "NGA → VIỆT" : "VIỆT → NGA"}
             </button>
           </div>
 
@@ -111,30 +128,21 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate }) => {
               <textarea 
                 value={sourceText}
                 onChange={(e) => setSourceText(e.target.value)}
-                placeholder="Nhập nội dung cần dịch..."
-                className="w-full bg-gray-900 border border-white/5 rounded-xl px-3 py-3 text-xs text-white placeholder:text-gray-700 outline-none focus:border-indigo-500/50 min-h-[90px] resize-none transition-all shadow-inner"
+                placeholder="Nhập đến đâu dịch đến đó..."
+                className="w-full bg-gray-900 border border-white/5 rounded-xl px-3 py-3 text-xs text-white placeholder:text-gray-700 outline-none focus:border-indigo-500/50 min-h-[110px] resize-none transition-all shadow-inner"
               />
             </div>
             
-            <button 
-              onClick={handleTranslate}
-              disabled={isTranslating || !sourceText.trim()}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-30 flex items-center justify-center gap-2 shadow-lg"
-            >
-              {isTranslating && <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" />}
-              {isTranslating ? "ĐANG DỊCH..." : "DỊCH NHANH"}
-            </button>
-
             <div className="relative">
               <span className="absolute top-2 right-2 text-[8px] font-black text-emerald-500/40 select-none uppercase">{isRuToVi ? "Vi" : "Ru"}</span>
-              <div className="w-full bg-indigo-950/20 border border-indigo-500/10 rounded-xl px-3 py-3 text-xs text-indigo-100 min-h-[90px] break-words whitespace-pre-wrap leading-relaxed shadow-inner">
-                {translatedText || <span className="text-gray-700 italic font-medium">Kết quả dịch ngắn gọn, sát nghĩa sẽ hiện ở đây...</span>}
+              <div className={`w-full bg-indigo-950/20 border rounded-xl px-3 py-3 text-xs min-h-[110px] break-words whitespace-pre-wrap leading-relaxed shadow-inner transition-all duration-500 ${isTranslating ? 'border-indigo-500/20 opacity-50' : 'border-indigo-500/10 opacity-100 text-indigo-100'}`}>
+                {translatedText || <span className="text-gray-700 italic font-medium">Kết quả dịch sẽ tự động xuất hiện ở đây...</span>}
               </div>
             </div>
           </div>
           
           <p className="text-[9px] text-center text-gray-700 italic px-2">
-            AI tự động tối ưu hóa bản dịch dựa trên ngữ cảnh tiếng Nga/Việt.
+            AI tự động xử lý ngay khi bạn gõ. {isTranslating ? "Đang xử lý..." : "Sẵn sàng."}
           </p>
         </div>
       )}
