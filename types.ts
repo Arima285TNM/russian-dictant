@@ -2,19 +2,37 @@
 export enum AppView {
   DASHBOARD = 'DASHBOARD',
   DICTATION = 'DICTATION',
+  READING = 'READING',
   VIDEO_DICTATION = 'VIDEO_DICTATION',
   VOCABULARY = 'VOCABULARY'
+}
+
+export interface Question {
+  question: string;
+  options: string[];
+  answer: string;
+  explanation?: string;
+}
+
+export interface QuizSet {
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  questions: Question[];
 }
 
 export interface DialogLine {
   speaker: string;
   text: string;
-  audioData?: string; // To store pre-generated base64 audio
+  audioData?: string; 
+  wordMeanings?: Record<string, string>;
 }
 
 export interface Lesson {
   id: string;
-  lines: DialogLine[];
+  type: 'DICTATION' | 'READING';
+  lines?: DialogLine[]; // Cho Dictation
+  fullText?: string;    // Cho Reading
+  quizzes?: QuizSet[];  // Cho Reading (nhiều bộ câu hỏi)
+  wordMeanings?: Record<string, string>;
 }
 
 export interface LessonCategory {

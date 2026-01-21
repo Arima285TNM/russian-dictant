@@ -1,76 +1,174 @@
 
-import { GoogleGenAI } from "@google/genai";
-import { Lesson, DialogLine, LessonCategory } from "../types";
+import { GoogleGenAI, Type } from "@google/genai";
+import { Lesson, DialogLine, Question, QuizSet } from "../types";
 
-const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+export interface DictionaryResult {
+    meaning: string;
+    partOfSpeech: string;
+    cases?: {
+        nom: string;
+        gen: string;
+        dat: string;
+        acc: string;
+        ins: string;
+        pre: string;
+    };
+}
+
+const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const REPO_OWNER = "Arima285TNM";
-const REPO_NAME = "dialog-text";
+const REPO_NAME = "text";
 const API_URL = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/`;
-const RAW_URL_BASE = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/`;
 
-export const translateText = async (text: string, isRuToVi: boolean): Promise<string> => {
-  if (!text.trim()) return "";
-  const ai = getAI();
+export const getAllLessons = async (category: 'dialogue' | 'passage'): Promise<{id: string, title: string, description: string}[]> => {
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Bạn là một chuyên gia dịch thuật Nga-Việt. Hãy dịch câu sau từ ${isRuToVi ? "tiếng Nga sang tiếng Việt" : "tiếng Việt sang tiếng Nga"}: "${text}".
-      Yêu cầu: Dịch ngắn gọn, tự nhiên, sát nghĩa nhất. Chỉ trả về kết quả dịch.`,
-    });
-    return response.text?.trim() || "Không thể dịch.";
-  } catch (error) {
-    console.error("Translation error:", error);
-    return "Lỗi kết nối dịch thuật.";
-  }
-};
-
-// Lấy danh sách bài học bằng cách liệt kê các file .json trong repo
-export const getAllLessons = async (): Promise<{id: string, title: string, description: string}[]> => {
-  try {
-    const response = await fetch(API_URL);
+    const response = await fetch(`${API_URL}${category}`);
     if (!response.ok) throw new Error("Failed to fetch repo contents");
     
-    const files = await response.json();
-    // Lọc lấy các file .json và không phải file data.json cũ (nếu có)
-    return files
-      .filter((file: any) => file.name.endsWith('.json') && file.name !== 'data.json' && file.name !== 'package.json' && file.name !== '1-40.json')
-      .map((file: any) => {
-        const id = file.name.replace('.json', '');
+    const items = await response.json();
+    
+    return items
+      .filter((item: any) => item.type === 'dir' || item.name.endsWith('.json'))
+      .map((item: any) => {
+        const id = item.name.replace('.json', '');
+        const prefix = category === 'dialogue' ? 'Hội thoại' : 'Văn bản';
         return {
-          id: id,
-          title: `Bài học ${id}`,
-          description: `Luyện nghe và viết chính tả bài hội thoại số ${id}`
+          id: `${category}/${id}`,
+          title: `${prefix} ${id}`,
+          description: `Luyện ${category === 'dialogue' ? 'nghe chính tả' : 'đọc hiểu'} bài số ${id}`
         };
       })
       .sort((a: any, b: any) => a.id.localeCompare(b.id, undefined, {numeric: true}));
   } catch (e) {
-    console.error("Error listing lessons from GitHub", e);
+    console.error("Error listing lessons", e);
     return [];
   }
 };
 
-export const fetchLessonText = async (lessonId: string): Promise<Lesson | null> => {
+export const fetchLessonText = async (lessonPath: string): Promise<Lesson | null> => {
     try {
-        const response = await fetch(`${RAW_URL_BASE}${lessonId}.json`);
-        if (!response.ok) throw new Error("Lesson file not found");
+        // Thử fetch trực tiếp path. Nếu 404, thử thêm .json (đối với các file dialogue lẻ)
+        let response = await fetch(`${API_URL}${lessonPath}`);
+        if (!response.ok) {
+            response = await fetch(`${API_URL}${lessonPath}.json`);
+        }
         
-        const data = await response.json();
-        
-        // Hỗ trợ cả định dạng mảng trực tiếp hoặc định dạng object { "001": [...] }
-        let linesRaw = Array.isArray(data) ? data : data[lessonId] || Object.values(data)[0];
-        
-        if (!Array.isArray(linesRaw)) return null;
+        if (!response.ok) throw new Error("Không thể truy cập dữ liệu bài học trên GitHub");
+
+        const dataInfo = await response.json();
+        let contentData: any = null;
+        let quizzes: QuizSet[] = [];
+
+        // Trường hợp 1: dataInfo là một mảng (Thư mục - Thường dành cho Passage/Reading)
+        if (Array.isArray(dataInfo)) {
+            const contentFile = dataInfo.find(f => f.name.includes('content') && f.name.endsWith('.json'));
+            if (!contentFile) throw new Error("Thư mục không chứa file content.json");
+
+            const contentRes = await fetch(contentFile.download_url);
+            contentData = await contentRes.json();
+
+            // Tìm tệp câu hỏi (Easy, Medium, Hard)
+            const quizFiles = dataInfo.filter(f => f.name.includes('quiz') && f.name.endsWith('.json'));
+            for (const qFile of quizFiles) {
+                try {
+                    const qRes = await fetch(qFile.download_url);
+                    const qData = await qRes.json();
+                    let difficulty: 'Easy' | 'Medium' | 'Hard' = 'Easy';
+                    if (qFile.name.toLowerCase().includes('medium')) difficulty = 'Medium';
+                    if (qFile.name.toLowerCase().includes('hard')) difficulty = 'Hard';
+                    
+                    const questions = Array.isArray(qData) ? qData : (qData.questions || []);
+                    if (questions.length > 0) quizzes.push({ difficulty, questions });
+                } catch (err) {
+                    console.warn("Lỗi tải quiz:", err);
+                }
+            }
+        } 
+        // Trường hợp 2: dataInfo là một đối tượng (Tệp đơn lẻ - Thường dành cho Dialogue/Dictation)
+        else if (dataInfo.download_url) {
+            const contentRes = await fetch(dataInfo.download_url);
+            contentData = await contentRes.json();
+        }
+
+        if (!contentData) throw new Error("Không thể tải nội dung bài học");
+
+        // PHÂN LOẠI: Nếu có fullText -> READING. Nếu không, kiểm tra cấu trúc mảng -> DICTATION
+        if (contentData.fullText || lessonPath.startsWith('passage')) {
+            const wordMeanings: Record<string, string> = {};
+            if (Array.isArray(contentData.words)) {
+                contentData.words.forEach((w: any) => {
+                    const cleanKey = w.word.toLowerCase().replace(/[.,!?;:«»""\(\)\[\]]/g, '').trim();
+                    wordMeanings[cleanKey] = w.translation;
+                });
+            }
+
+            return {
+                id: lessonPath,
+                type: 'READING',
+                fullText: contentData.fullText || "",
+                quizzes: quizzes.sort((a, b) => {
+                    const order = { 'Easy': 1, 'Medium': 2, 'Hard': 3 };
+                    return order[a.difficulty] - order[b.difficulty];
+                }),
+                wordMeanings: wordMeanings
+            };
+        }
+
+        // Xử lý DICTATION (Dữ liệu hội thoại)
+        // Lưu ý: data.json của bạn có thể chứa nhiều bài học dưới dạng { "001": [...], "002": [...] }
+        // Hoặc một tệp chỉ chứa mảng các dòng hội thoại trực tiếp.
+        let linesRaw = Array.isArray(contentData) ? contentData : null;
+        if (!linesRaw) {
+            // Thử tìm mảng đầu tiên trong object (ví dụ keys "001", "data", "lines"...)
+            const firstArrayKey = Object.keys(contentData).find(key => Array.isArray(contentData[key]));
+            if (firstArrayKey) linesRaw = contentData[firstArrayKey];
+        }
+
+        if (!linesRaw) throw new Error("Định dạng tệp hội thoại không hợp lệ");
 
         const lines: DialogLine[] = linesRaw.map((item: any) => ({
             speaker: item.speaker || "Người nói",
             text: item.text || "",
-            audioData: item.audioBase64 || "" 
+            audioData: item.audioBase64 || item.audioData || "",
+            wordMeanings: item.wordMeanings || {}
         }));
-        
-        return { id: lessonId, lines };
+
+        return { id: lessonPath, type: 'DICTATION', lines };
+
     } catch (e) {
-        console.error(`Error fetching lesson ${lessonId}`, e);
+        console.error(`Error processing lesson ${lessonPath}:`, e);
         return null;
     }
+};
+
+export const lookupWord = async (word: string): Promise<DictionaryResult | null> => {
+    if (!word.trim()) return null;
+    const ai = getAI();
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: `Tra từ tiếng Nga: "${word}". Trả về nghĩa tiếng Việt và 6 cách. Trả về JSON.`,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        meaning: { type: Type.STRING },
+                        partOfSpeech: { type: Type.STRING },
+                        cases: {
+                            type: Type.OBJECT,
+                            properties: {
+                                nom: { type: Type.STRING }, gen: { type: Type.STRING }, dat: { type: Type.STRING },
+                                acc: { type: Type.STRING }, ins: { type: Type.STRING }, pre: { type: Type.STRING }
+                            }
+                        }
+                    },
+                    required: ["meaning", "partOfSpeech"]
+                }
+            }
+        });
+        const text = response.text;
+        return text ? JSON.parse(text) : null;
+    } catch { return null; }
 };
